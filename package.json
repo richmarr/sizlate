@@ -16,7 +16,8 @@
     "cheerio": "~0.10.5"
   },
   "devDependencies": {
-    "jasmine-node": "~1.7.1"
+    "jasmine-node": "~1.7.1",
+    "async": "~0.2.9"
   },
   "scripts": {
     "test": "node node_modules/jasmine-node/bin/jasmine-node ./spec/*"
