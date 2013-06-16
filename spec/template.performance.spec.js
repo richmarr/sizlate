@@ -23,12 +23,12 @@ describe('When given a file', function() {
 				}
 			};
 		
-		var template = new Template();
+		var template = new Template('spec/fixtures/view-a.html', 'utf-8');
 		
 		async.whilst( function(){ 
-			return i++ < 1000;
+			return i++ < 2000;
 		}, function(cb){
-			template.render('spec/fixtures/view-a.html', 'utf8', config, cb );
+			template.render( config, cb );
 		}, function(){
 			expect(new Date().getTime() - startTime).toBeLessThan(200);
 			done();

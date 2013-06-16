@@ -2,11 +2,14 @@ var fs = require('fs');
 var cheerio = require('cheerio');
 var crypto = require('crypto');
 
-var Template = exports.Template = function(){
+var Template = exports.Template = function( path, encoding ){
+	this.path = path;
+	this.encoding = encoding;
+	return this;
 };
 
-Template.prototype.read = function( path, encoding, callback ){
-	fs.readFile( path, encoding, function ( err, str ) {
+Template.prototype.read = function( callback ){
+	fs.readFile( this.path, this.encoding, function ( err, str ) {
 		if ( err ) {
 			console.error("Could not open file: %s", err);
 			process.exit(1);
@@ -15,9 +18,9 @@ Template.prototype.read = function( path, encoding, callback ){
 	});
 };
 
-Template.prototype.compile = function( path, encoding, options, callback ){
+Template.prototype.compile = function( options, callback ){
 	var self = this;
-	this.read( path, encoding, function( $ ){
+	this.read( function( $ ){
 		var selectors = options.selectors,
 			out = [];
 		for(var selector in selectors) {
@@ -38,12 +41,61 @@ Template.prototype.compile = function( path, encoding, options, callback ){
 	});
 };
 
-Template.prototype.render = function( path, encoding, options, callback ){
+
+Template.prototype.render = function( options, callback ){
 	if ( this._compiled ) return callback( undefined, replaceTokens( this._compiled, options ) );
-	this.compile( path, encoding, options, function( err, compiled ){
+	this.compile( options, function( err, compiled ){
 		return callback( undefined, replaceTokens( compiled, options ) );
 	});
 };
+
+
+Template.prototype.prepareTemplateSlices = function( options, callback ){
+	//if ( this._compiled ) return callback( undefined, splitOnTokens( this._compiled, options ) );
+	this.compile( options, function( err, compiled ){
+		if ( err ) return callback(err);
+		var self = this;
+		self._selectorIndexes = {};
+		self._slices = compiled.split("#sizlate#");
+		var selectors = options.selectors;
+			
+		this._slices.forEach(function(slice,i){
+			if ( selectors[slice] ) {
+				self._selectorIndexes[slice] = i;
+				console.log(i);
+			}
+		});
+		return callback( undefined );
+	});
+};
+
+Template.prototype.render = function( options, callback ){
+	var self = this;
+	if ( this._slices ) return callback( undefined, self.joinTemplateSlices( options ) );
+	this.prepareTemplateSlices( options, function( err ){
+		return callback( undefined, self.joinTemplateSlices( options ) );
+	});
+};
+
+Template.prototype.joinTemplateSlices = function( options ){
+	var selectors = options.selectors,
+		out = this._slices.slice(0),
+		indexes = this._selectorIndexes;
+	for( var selector in selectors ) {
+		var data = selectors[selector];
+		if ( data.partial ) continue;
+		out[this._selectorIndexes[selector]] = data;
+	}
+	return out.join("");
+}
+
+Template.prototype.splitOnTokensAndReturnIndexes = function( str, options ){
+	var slices = str.split("#sizlate#"),
+		selectorIndexes;
+	slices.forEach(function(slice,i){
+		console.log(i);
+	})
+}
 
 function replaceTokens( str, options ){
 	var selectors = options.selectors;
@@ -89,6 +141,8 @@ var checkForInputs = function($, selector, $node, data) {
 };
 
 function getSelectorToken( text ){
+	return "#sizlate#"+text+"#sizlate#";
+	
 	var hash = crypto.createHash('md5');
 	hash.update(text,'utf8');
 	var hex = hash.digest('hex');
