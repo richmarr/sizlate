@@ -2,12 +2,12 @@ var fs = require('fs');
 var cheerio = require('cheerio');
 exports.version = '0.8.3';
 
-var checkForInputs = function($node, data) {
+var checkForInputs = function($, $node, data, selector, token ) {
 	$node.each(function(i, elem) {
 		if(this[0].name === 'input') {
-			$(this[0]).attr('value', data);
+			$(this[0]).attr('value', token+selector+token);
 		}else {
-			$(this[0]).html(data);
+			$(this[0]).html(token+selector+token);
 		}
 	});
 };
@@ -34,11 +34,12 @@ var updateNodeWithObject = function($node, obj) {
 	}
 	return $node;
 };
-var updateNode = function($node, selector, data) {
+// $domNode = updateNode($, $domNode, selector, data, token);
+var updateNode = function($, $node, selector, data, token) {
 	switch(typeof data) {
 		case "string":
 			if(data !== ""){
-				checkForInputs($node, data);
+				checkForInputs($, $node, data, selector, token);
 			}
 		break;
 		case "number": // TODO - confirm - this seems wrong - why only numbers to ids?
@@ -47,11 +48,11 @@ var updateNode = function($node, selector, data) {
 			}else if(selector == ".data-id") {
 				$node.attr('data-id', data);
 			}else {
-				checkForInputs($node, data);
+				checkForInputs($, $node, data, selector, token);
 			}
 		break;
 		case "object":
-			$node = updateNodeWithObject($node, data);
+			$node = updateNodeWithObject($node, data, token);
 		break;
 	}
 	return $node;
@@ -64,7 +65,7 @@ var selectorIterator = function(selectors, $) {
 		}
 		var $domNode = $(selector);
 		if($domNode) {
-			$domNode = updateNode($domNode, selector, selectors[selector]);
+			$domNode = updateNode( $, $domNode, selector, selectors[selector]);
 		}
 	}
 };
@@ -83,41 +84,6 @@ exports.classifyKeys = function(data, options) {
 		retArray.push(newObj);
 	}
 	return retArray;
-};
-
-exports.doRender = function(str, selectors) {
-	/*if(!selectors){
-		return str;
-	}
-	var selectors = ( typeof selectors[0] == 'undefined' ) ? [selectors] : selectors; // make sure we have an array.
-	var selectorCount = selectors.length;
-	var out = [];
-	while(selectorCount--){
-		$ = cheerio.load(str);
-		selectorIterator(selectors[selectorCount], $);
-		out.push($.html());
-	}
-	return out.join('');
-	*/
-	
-		var $ = cheerio.load(str),
-			out = [];
-			
-		for(var selector in selectors) {
-			var data = selectors[selector];
-			if( data && !data.partial ){ // not sure what to do about nested templates yet
-				if( typeof data === 'function') break;
-					
-				var $domNode = $(selector);
-				if( $domNode && $domNode.length) {
-					$domNode = updateNode($, $domNode, selector, data);
-				}
-				
-				out.push($.html());	
-			}
-		}
-		return out.join("");
-		
 };
 
 var _preparedTemplates = {};
@@ -197,29 +163,16 @@ function prepareLayout( options, callback ){
 	});
 }
 
-function serveTemplate( template, options ){
-	var selectors = options.selectors,
-		out = template.slices.slice(0),
-		indexes = template.selectorIndexes;
+function serveTemplate( template, selectors ){
+	var out = [template[0]];
 		
 	for( var selector in selectors ) {
 		var data = selectors[selector];
 		if ( data.partial ) continue; // TODO: partials
-		out[indexes[selector]] = data;
+		out[template.index[selector]] = data;
 	}
 	return out.join("");
 }
-/*
-function insertTokensAccordingToSelectors( filename, options, callback ){
-	var template = _preparedTemplates[filename];
-	fs.readFile( filename, 'utf8', function ( err, str ) {
-		if ( err ) {
-			console.error("Could not open file: %s", err);
-			process.exit(1);
-		}
-		return callback( undefined, exports.doRender( str, options.selectors ) );
-	});
-};*/
 
 // Make sure we've loaded and prepared all of the templates for a given request
 function loadTemplates( filename, options, callback ){
@@ -235,7 +188,7 @@ function loadTemplates( filename, options, callback ){
 	for ( var selector in options.selectors ){
 		var data = options.selectors[selector];
 		if ( data.partial ){
-			files.push( options.settings.views + '/partials/' + selectors[key].partial + '.'+options.settings['view engine']
+			files.push( options.settings.views + '/partials/' + selectors[key].partial + '.'+options.settings['view engine'] );
 		}
 	}
 	// Load them all
@@ -264,7 +217,7 @@ function loadFile( filename, options, callback ){
 	});
 };
 
-function insertTokensIntoHTML( html, selectors ){
+function insertTokensIntoHTML( html, token, selectors ){
 	
 	var $ = cheerio.load(html);
 		
@@ -275,7 +228,7 @@ function insertTokensIntoHTML( html, selectors ){
 				
 			var $domNode = $(selector);
 			if( $domNode && $domNode.length) {
-				$domNode = updateNode($, $domNode, selector, data);
+				$domNode = updateNode( $, $domNode, selector, data, token);
 			}
 		}
 	}
@@ -283,13 +236,56 @@ function insertTokensIntoHTML( html, selectors ){
 	return $.html();
 };
 
+
+//
+// 
+//
+exports._generateIndexedArrayOfTemplateSlices = function( html, selectors ){
+	
+	// This token is the easiest way I could think of to break down "<i><b></b></i>" into ["<i><b>","","</b></i>"]
+	// the process goes:
+	//   1) Parse string into DOM using cheerio
+	//   2) Push in tokens that look like "#sizlate#"+selector+"#sizlate#"
+	//   3) Split on "#sizlate#"
+	//   4) Loop through resulting array looking for each selector, removing it and marking its location in a lookup table
+	//   5) Resulting data structure allows data population via a lookup table, then HTML serialisation via Array.join()	
+	var token = "#sizlate#",
+		slices = [];
+		
+	slices.index = {};
+	
+	insertTokensIntoHTML( html, token, selectors ).split(token).forEach(function( slice, i ){
+		if ( slice ) {
+			if ( selectors[slice] ) {
+				slices.index[slice] = i;
+				slices.push("");
+			}
+			else {
+				slices.push(slice);
+			}
+		}
+	});
+
+	return slices;
+}
+
+//
+// Uncached templating API for testing and utility
+//
+exports.doRender = function( str, selectors ){
+	var indexedArray = exports._generateIndexedArrayOfTemplateSlices( str, selectors );
+	return serveTemplate( indexedArray, selectors );
+};
+
+
 /*
 
 string:
-	parse string
-	replace tokens
-	split into slices
-	record indexes
+	load string 
+		parse string
+		replace tokens
+		split into slices
+		record indexes
 	serve content
 
 file:
@@ -298,7 +294,8 @@ file:
 		replace tokens
 		split into slices
 		record indexes
-		serve content
+	cache output
+	serve content
 
 
 
