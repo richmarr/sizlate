@@ -1,5 +1,5 @@
 var sizlate = require('../sizlate.js');
-
+/*
 describe('When given tag selector ', function() {
 	it("it should set the innerHTML", function(done) {
 		var startTime = new Date().getTime(),
@@ -60,3 +60,4 @@ describe('When given an object containing className ', function() {
 		done();
 	});
 });
+*/

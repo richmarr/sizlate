@@ -18,13 +18,13 @@ describe('When given a file', function() {
 		}, function(cb){
 			sizlate.__express('spec/fixtures/view-a.html', config, cb );
 		}, function(){
-			expect(new Date().getTime() - startTime).toBeLessThan(200);
+			expect(new Date().getTime() - startTime).toBeLessThan(100);
 			done();
 		});
 	});
 });
 
-
+/*
 describe('When given a file and a layout', function() {
 	it("it should render quickly", function(done) {
 		
@@ -115,3 +115,4 @@ describe('When given a file with layout and partials', function() {
 		});
 	});
 });
+*/

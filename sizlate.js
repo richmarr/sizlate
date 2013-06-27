@@ -2,6 +2,10 @@ var fs = require('fs');
 var cheerio = require('cheerio');
 exports.version = '0.8.3';
 
+// Cached templates
+var _preparedTemplates = {};
+
+
 var checkForInputs = function($, $node, data, selector, token ) {
 	$node.each(function(i, elem) {
 		if(this[0].name === 'input') {
@@ -34,7 +38,7 @@ var updateNodeWithObject = function($node, obj) {
 	}
 	return $node;
 };
-// $domNode = updateNode($, $domNode, selector, data, token);
+
 var updateNode = function($, $node, selector, data, token) {
 	switch(typeof data) {
 		case "string":
@@ -86,85 +90,29 @@ exports.classifyKeys = function(data, options) {
 	return retArray;
 };
 
-var _preparedTemplates = {};
-
+//
+// Default API for Express apps
+//
 exports.__express = function( filename, options, callback ){
 	if ( _preparedTemplates[filename] ) {
 		// We already have a compiled template for this file
-		return callback( undefined, serveTemplate( _preparedTemplates[filename], options ) );
+		return callback( undefined, serveTemplate( _preparedTemplates[filename], options.selectors ) );
 	}
-	// Previously unknown template, we need to compile it before serving up HTML
-	prepareTemplate( filename, options, function( err ){
-		if ( err ) throw err;
-		return callback( undefined, serveTemplate( _preparedTemplates[filename], options ) );
-	});
-};
-
-
-//
-//	Precompiles a template into an intermediate format
-//
-function prepareTemplate( filename, options, callback ){
-	prepareLayout( options, function( err ){
-		insertTokensAccordingToSelectors( filename, options, function( err, compiled ){
-			if ( err ) return callback(err);
-		
-			// make a blank template
-			if ( !_preparedTemplates[filename] ) _preparedTemplates[filename] = {};
-			var template = _preparedTemplates[filename];
-			template.selectorIndexes = {};
-			template.slices = [];
-		
-			var selectors = options.selectors || {};
-			
-			compiled.split("#sizlate#").forEach(function( slice, i ){
-				console.log(slice);
-				if ( slice ) {
-					if ( selectors[slice] ) {
-						template.selectorIndexes[slice] = i;
-						template.slices.push("");
-					}
-					else {
-						template.slices.push(slice);
-					}
-				}
-			});
-		
-			return callback( undefined );
-		});
-	});
-};
-
-function prepareLayout( options, callback ){
-	if ( !options.layout ) return callback();
 	
-	var filepath = options.layout,
-		ext = options.settings['view engine'];
-		
-	fs.readFile( filepath+"."+ext, 'utf8', function ( err, str ) {
+	loadFile( filename, options, function( err, str ){
 		if ( err ) return callback(err);
 		
-		var $ = cheerio.load(str),
-			selectors = options.selectors;
-			
-		for(var selector in selectors) {
-			var data = selectors[selector];
-			if( data && !data.partial ){ // not sure what to do about nested templates yet
-				if( typeof data === 'function') break;
-					
-				var $domNode = $(selector);
-				if( $domNode && $domNode.length) {
-					$domNode = updateNode($, $domNode, selector, data);
-				}
-			}
-		}
-		
-		return callback( undefined, $.html() );
+		// generate the template and cache it
+		_preparedTemplates[filename] = generateIndexedArrayOfTemplateSlices( str, options.selectors );
+	
+		// populate the cached template with the given values
+		return callback( undefined, serveTemplate( _preparedTemplates[filename], options.selectors ) );	
+	
 	});
-}
+};
 
 function serveTemplate( template, selectors ){
-	var out = [template[0]];
+	var out = template.slice(0);
 		
 	for( var selector in selectors ) {
 		var data = selectors[selector];
@@ -173,6 +121,8 @@ function serveTemplate( template, selectors ){
 	}
 	return out.join("");
 }
+
+
 
 // Make sure we've loaded and prepared all of the templates for a given request
 function loadTemplates( filename, options, callback ){
@@ -217,6 +167,11 @@ function loadFile( filename, options, callback ){
 	});
 };
 
+
+//
+// Uses Cheerio to inject marker tokens into the DOM, then reserialise it. This is so that we can split up the HTML
+// and manage it as a string for simple concatenation at query time
+//
 function insertTokensIntoHTML( html, token, selectors ){
 	
 	var $ = cheerio.load(html);
@@ -238,11 +193,12 @@ function insertTokensIntoHTML( html, token, selectors ){
 
 
 //
-// 
+// Stateless synchronous method for generating an array of template slices
+// Used by the two main API calls, doRender() and __express()
 //
-exports._generateIndexedArrayOfTemplateSlices = function( html, selectors ){
+function generateIndexedArrayOfTemplateSlices( html, selectors ){
 	
-	// This token is the easiest way I could think of to break down "<i><b></b></i>" into ["<i><b>","","</b></i>"]
+	// This token split process is the easiest way I could think of to break down "<i><b></b></i>" into ["<i><b>","","</b></i>"]
 	// the process goes:
 	//   1) Parse string into DOM using cheerio
 	//   2) Push in tokens that look like "#sizlate#"+selector+"#sizlate#"
@@ -255,12 +211,15 @@ exports._generateIndexedArrayOfTemplateSlices = function( html, selectors ){
 	slices.index = {};
 	
 	insertTokensIntoHTML( html, token, selectors ).split(token).forEach(function( slice, i ){
+		// Loop through the elements in the template array, looking for marked positions
 		if ( slice ) {
-			if ( selectors[slice] ) {
+			if ( selectors && selectors[slice] ) {
+				// This slice is where a selector wants to put data, so index the location and leave an empty string
 				slices.index[slice] = i;
 				slices.push("");
 			}
 			else {
+				// This is just HTML, so pass it through
 				slices.push(slice);
 			}
 		}
@@ -269,13 +228,15 @@ exports._generateIndexedArrayOfTemplateSlices = function( html, selectors ){
 	return slices;
 }
 
-//
+// 
 // Uncached templating API for testing and utility
 //
 exports.doRender = function( str, selectors ){
-	var indexedArray = exports._generateIndexedArrayOfTemplateSlices( str, selectors );
+	var indexedArray = generateIndexedArrayOfTemplateSlices( str, selectors );
 	return serveTemplate( indexedArray, selectors );
 };
+
+
 
 
 /*
@@ -347,4 +308,72 @@ exports.__express = function(filename, options, callback) {
 	if(!wait) {
 		doRendering();
 	}
-};*/
+};
+
+
+
+
+//
+//	Precompiles a template into an intermediate format
+//
+function prepareTemplate( filename, options, callback ){
+	prepareLayout( options, function( err ){
+		insertTokensAccordingToSelectors( filename, options, function( err, compiled ){
+			if ( err ) return callback(err);
+		
+			// make a blank template
+			if ( !_preparedTemplates[filename] ) _preparedTemplates[filename] = {};
+			var template = _preparedTemplates[filename];
+			template.selectorIndexes = {};
+			template.slices = [];
+		
+			var selectors = options.selectors || {};
+			
+			compiled.split("#sizlate#").forEach(function( slice, i ){
+				console.log(slice);
+				if ( slice ) {
+					if ( selectors[slice] ) {
+						template.selectorIndexes[slice] = i;
+						template.slices.push("");
+					}
+					else {
+						template.slices.push(slice);
+					}
+				}
+			});
+		
+			return callback( undefined );
+		});
+	});
+};
+
+function prepareLayout( options, callback ){
+	if ( !options.layout ) return callback();
+	
+	var filepath = options.layout,
+		ext = options.settings['view engine'];
+		
+	fs.readFile( filepath+"."+ext, 'utf8', function ( err, str ) {
+		if ( err ) return callback(err);
+		
+		var $ = cheerio.load(str),
+			selectors = options.selectors;
+			
+		for(var selector in selectors) {
+			var data = selectors[selector];
+			if( data && !data.partial ){ // not sure what to do about nested templates yet
+				if( typeof data === 'function') break;
+					
+				var $domNode = $(selector);
+				if( $domNode && $domNode.length) {
+					$domNode = updateNode($, $domNode, selector, data);
+				}
+			}
+		}
+		
+		return callback( undefined, $.html() );
+	});
+}
+
+
+*/

@@ -3,13 +3,9 @@ var sizlate = require('../sizlate.js');
 describe('When given single tag', function() {
 	it("it should create an indexed array of three parts", function(done) {
 		
-		var arr = sizlate.doRender('<div></div>', {'div': 'hi'});
-		
-		var expected = ['<div>','','</div>'];
-		expected.index = {div:1};
-		
-		expect( arr.length ).toEqual( expected.length );
-		expect( arr.index['div'] ).toEqual( expected.index['div'] );
+		var output = sizlate.doRender('<div></div>', {'div': 'hi'});
+				
+		expect( output ).toEqual('<div>hi</div>');
 		
 		done();
 
