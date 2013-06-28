@@ -112,12 +112,18 @@ exports.__express = function( filename, options, callback ){
 };
 
 function serveTemplate( template, selectors ){
-	var out = template.slice(0);
+	var out = template.slice(0),
+		templatePositions;
 		
 	for( var selector in selectors ) {
 		var data = selectors[selector];
 		if ( data.partial ) continue; // TODO: partials
-		out[template.index[selector]] = data;
+		
+		if ( templatePositions = template.index[selector] ){
+			templatePositions.forEach(function(i){
+				out[i] = data;
+			});
+		}
 	}
 	return out.join("");
 }
@@ -215,7 +221,9 @@ function generateIndexedArrayOfTemplateSlices( html, selectors ){
 		if ( slice ) {
 			if ( selectors && selectors[slice] ) {
 				// This slice is where a selector wants to put data, so index the location and leave an empty string
-				slices.index[slice] = i;
+				// Selectors can select more than one location, so we need an array rather than a simple index
+				if ( !slices.index[slice] ) slices.index[slice] = [];
+				slices.index[slice].push(i);
 				slices.push("");
 			}
 			else {
