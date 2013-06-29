@@ -94,24 +94,42 @@ exports.classifyKeys = function(data, options) {
 // Default API for Express apps
 //
 exports.__express = function( filename, options, callback ){
-	if ( _preparedTemplates[filename] ) {
+	if ( _preparedTemplates[filename] && !( options.layout || _preparedTemplates[layoutPath(options)] ) ) {
 		// We already have a compiled template for this file
-		return callback( undefined, serveTemplate( _preparedTemplates[filename], options.selectors ) );
+		return callback( undefined, generateCompleteHtml( _preparedTemplates[filename], options.layout, options, options.selectors ) );
 	}
 	
-	loadFile( filename, options, function( err, str ){
+	loadFiles( filename, options, options.selectors, function( err ){
 		if ( err ) return callback(err);
 		
-		// generate the template and cache it
-		_preparedTemplates[filename] = generateIndexedArrayOfTemplateSlices( str, options.selectors );
-	
 		// populate the cached template with the given values
-		return callback( undefined, serveTemplate( _preparedTemplates[filename], options.selectors ) );	
+		return callback( undefined, generateCompleteHtml( _preparedTemplates[filename], options.layout, options, options.selectors ) );	
 	
 	});
 };
 
-function serveTemplate( template, selectors ){
+function generateCompleteHtml( template, layout, options, selectors ){
+	
+	var htmlArr = [],
+		containerIndex = Infinity;
+		
+	if ( layout ){
+		htmlArr = generateViewArrayFromTemplate( _preparedTemplates[layoutPath(options)], selectors )
+	}
+	
+	var args = generateViewArrayFromTemplate( template, selectors );
+	args.unshift(containerIndex,0)
+	Array.prototype.splice.apply( htmlArr, args );
+	
+	return htmlArr.join('');
+	
+}
+
+function generateViewArrayFromTemplate( template, selectors ){
+	
+	// make sure we have a *copy* of the template array, rather than modifying an original
+	//if ( template.index ) template = template.slice(0);
+	
 	var out = template.slice(0),
 		templatePositions;
 		
@@ -125,45 +143,65 @@ function serveTemplate( template, selectors ){
 			});
 		}
 	}
-	return out.join("");
+	
+	// also copy the index so that we can deal with template/partial injection
+	//out.index = template.index;
+	
+	return out;
 }
 
 
+function layoutPath(options){
+	return options.settings.views+"/"+options.layout+'.'+options.settings['view engine'];
+}
 
 // Make sure we've loaded and prepared all of the templates for a given request
-function loadTemplates( filename, options, callback ){
-	var files = [];
+function loadFiles( filename, options, selectors, callback ){
+	var files = [],
+		open = 0,
+		responded = 0;
 	
 	// Check to see if we've loaded this view before
-	if ( !_preparedTemplates[filename] ) files.push({ file:filename, selectors:options.selectors });
+	if ( !_preparedTemplates[filename] ) {
+		open++;
+		loadTemplate( filename, options, selectors, function(){
+			if ( ++responded === open ) callback();
+		})
+	}
 	
 	// Look for the layout, if there is one
-	if ( options.layout && !_preparedTemplates[options.layout] ) files.push({ file:options.layout, selectors:options.selectors });
+	if ( options.layout && !_preparedTemplates[layoutPath(options)] ) {
+		open++;
+		loadTemplate( layoutPath(options), options, selectors, function(){
+			if ( ++responded === open ) callback();
+		})
+	}
 	
-	// Now look up all the partials used
+	/* Now look up all the partials used
 	for ( var selector in options.selectors ){
 		var data = options.selectors[selector];
 		if ( data.partial ){
 			files.push( options.settings.views + '/partials/' + selectors[key].partial + '.'+options.settings['view engine'] );
 		}
 	}
-	// Load them all
-	var i = files.length,
-		responded = 0;
-	while ( i-- > 0 ) {
-		loadTemplate( files[i].file, files[i].options, function( err, template ){
+	*/
+	
+	/*while ( i-- > 0 ) {
+		loadTemplate( files[i],	 function( err, str ){
 			
+			// generate the template and cache it
+			_preparedTemplates[filename] = generateIndexedArrayOfTemplateSlices( str, options.selectors );
+		
 			if ( ++responded == files.length ) callback()
 		});
-	}
+	}*/
 }
 
-function loadTemplate( filename, options, callback ){
+function loadTemplate( filename, options, selectors, callback ){
 	loadFile( filename, options, function( err, str ){
-		if ( err ) return callback(err);
-		var html = insertTokensIntoHTML( str, options.selectors );
-		
-		_preparedTemplates[filename] 
+		if ( err ) throw err;
+		_preparedTemplates[filename] = generateIndexedArrayOfTemplateSlices( str, selectors );
+		callback();
 	});
 }
 
@@ -241,6 +279,6 @@ function generateIndexedArrayOfTemplateSlices( html, selectors ){
 //
 exports.doRender = function( str, selectors ){
 	var indexedArray = generateIndexedArrayOfTemplateSlices( str, selectors );
-	return serveTemplate( indexedArray, selectors );
+	return generateCompleteHtml( indexedArray, undefined, undefined, selectors );
 };
 

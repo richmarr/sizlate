@@ -20,7 +20,7 @@ describe('When given a file', function() {
 		});
 	});
 });
-/*
+
 describe('When given a file and a layout', function() {
 	it("it should render properly", function(done) {
 		sizlate.__express('spec/fixtures/view-a.html', {
@@ -30,7 +30,6 @@ describe('When given a file and a layout', function() {
 			},
 			layout:"layout-a"
 		}, function( err, html ){
-			console.log(err,html)
 			var $domNode,
 				$ = cheerio.load(html);
 		
@@ -44,7 +43,7 @@ describe('When given a file and a layout', function() {
 		});
 	});
 });
-*/
+
 /*
 
 describe('When given a file with partials', function() {
