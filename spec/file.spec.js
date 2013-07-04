@@ -1,6 +1,6 @@
 var sizlate = require('../sizlate.js'),
 	cheerio = require("cheerio");
-
+/*
 describe('When given a file', function() {
 	it("it should render properly", function(done) {
 		sizlate.__express('spec/fixtures/view-a.html', {
@@ -39,15 +39,25 @@ describe('When given a file and a layout', function() {
 			$domNode = $("html");
 			expect($domNode.length).toEqual(1);
 			
+			$domNode = $("#footer");
+			expect($domNode.length).toEqual(1);
+			
+			$domNode = $("#header");
+			expect($domNode.length).toEqual(1);
+			
 			done();
 		});
 	});
 });
 
-/*
+*/
+
 
 describe('When given a file with partials', function() {
 	it("it should pull them in properly", function(done) {
+		
+		sizlate.reset();
+
 		sizlate.__express('spec/fixtures/view-a.html', {
 			settings : {
 				views : "spec/fixtures",
@@ -57,8 +67,8 @@ describe('When given a file with partials', function() {
 				'#partials': {
 					partial: 'partial-a',
 					data: [
-						{ name: 'bob' },
-						{ name: 'anna' }
+						{ h2: 'bob' },
+						{ h2: 'anna' }
 					]
 				}
 			}
@@ -73,12 +83,18 @@ describe('When given a file with partials', function() {
 			$domNode = $("#partials");
 			expect($domNode.length).toEqual(1);
 			
+			$domNode = $(".partial");
+			
+			expect($domNode.find("h2").html()).toEqual("bob");
+			
+			expect($domNode.next().find("h2").html()).toEqual("anna");
+			
 			done();
 		});
 	});
 });
 
-
+/*
 describe('When given a file with layout and partials', function() {
 	it("it should pull them together properly", function(done) {
 		sizlate.__express('spec/fixtures/view-a.html', {
@@ -113,5 +129,4 @@ describe('When given a file with layout and partials', function() {
 			done();
 		});
 	});
-});
-*/
+});*/

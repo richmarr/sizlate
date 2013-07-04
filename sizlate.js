@@ -5,6 +5,9 @@ exports.version = '0.8.3';
 // Cached templates
 var _preparedTemplates = {};
 
+exports.reset = function(){ delete _preparedTemplates; _preparedTemplates = {} };
+
+
 
 var checkForInputs = function($, $node, data, selector, token ) {
 	$node.each(function(i, elem) {
@@ -16,9 +19,13 @@ var checkForInputs = function($, $node, data, selector, token ) {
 	});
 };
 
-var updateNodeWithObject = function($node, obj) {
+var updateNodeWithObject = function( $node, obj, selector, token ) {
 	for(var key in obj){
 		switch(key) {
+			case 'partial':
+				// insert a placeholder for this partial selector
+				$node.html(token+selector+token);
+			break;
 			case 'selectors':
 				// we need to iterate over the selectors here. 
 				var selectors = obj[key];
@@ -32,6 +39,8 @@ var updateNodeWithObject = function($node, obj) {
 			case'innerHTML' :
 				$node.html(obj[key]);
 			break;
+			case 'data':
+				if ( obj.partial ) break; // this is data for the partial rather than being a data HTML attribute
 			default: 
 				$node.attr(key, obj[key]);
 		}
@@ -41,11 +50,6 @@ var updateNodeWithObject = function($node, obj) {
 
 var updateNode = function($, $node, selector, data, token) {
 	switch(typeof data) {
-		case "string":
-			if(data !== ""){
-				checkForInputs($, $node, data, selector, token);
-			}
-		break;
 		case "number": // TODO - confirm - this seems wrong - why only numbers to ids?
 			if(selector == ".id"){
 				$node.attr('id', data);
@@ -56,8 +60,12 @@ var updateNode = function($, $node, selector, data, token) {
 			}
 		break;
 		case "object":
-			$node = updateNodeWithObject($node, data, token);
+			$node = updateNodeWithObject( $node, data, selector, token );
 		break;
+		default:
+			if(data !== ""){
+				checkForInputs($, $node, data, selector, token);
+			}
 	}
 	return $node;
 };
@@ -96,36 +104,46 @@ exports.classifyKeys = function(data, options) {
 exports.__express = function( filename, options, callback ){
 	if ( _preparedTemplates[filename] && !( options.layout || _preparedTemplates[layoutPath(options)] ) ) {
 		// We already have a compiled template for this file
-		return callback( undefined, generateCompleteHtml( _preparedTemplates[filename], options.layout, options, options.selectors ) );
+		return callback( undefined, generateHtmlFromTemplate( _preparedTemplates[filename], options.layout, options, options.selectors ) );
 	}
 	
 	loadFiles( filename, options, options.selectors, function( err ){
 		if ( err ) return callback(err);
-		
 		// populate the cached template with the given values
-		return callback( undefined, generateCompleteHtml( _preparedTemplates[filename], options.layout, options, options.selectors ) );	
+		return callback( undefined, generateHtmlFromTemplate( _preparedTemplates[filename], options.layout, options, options.selectors ) );	
 	
 	});
 };
 
-function generateCompleteHtml( template, layout, options, selectors ){
+//
+// Combines the various sets of arrays from views, layouts, and partials, into an HTML string
+//
+function generateHtmlFromTemplate( template, layout, options, selectors ){
 	
 	var htmlArr = [],
-		containerIndex = Infinity;
-		
+		viewPosition = Infinity;
+	
+	// Prepare the layout template if there is one
 	if ( layout ){
-		htmlArr = generateViewArrayFromTemplate( _preparedTemplates[layoutPath(options)], selectors )
+		preparedLayout = _preparedTemplates[layoutPath(options)];
+		viewPosition = preparedLayout.index["#container"];
+		htmlArr = injectDataIntoTemplate( preparedLayout, selectors, options );
 	}
 	
-	var args = generateViewArrayFromTemplate( template, selectors );
-	args.unshift(containerIndex,0)
-	Array.prototype.splice.apply( htmlArr, args );
+	// splice the view into the layout. There's a bit of shenannigans here to make this fit into the arguments of Array.splice()
+	var viewArgs = injectDataIntoTemplate( template, selectors, options );
+	viewArgs.unshift(viewPosition,0);
+	Array.prototype.splice.apply( htmlArr, viewArgs );
 	
 	return htmlArr.join('');
 	
 }
 
-function generateViewArrayFromTemplate( template, selectors ){
+//
+// Pushes data into a copy of a template, but keeps it as an array so that it can be combined 
+// with other template arrays, see generateHtmlFromTemplate()
+//
+function injectDataIntoTemplate( template, selectors, options ){
 	
 	// make sure we have a *copy* of the template array, rather than modifying an original
 	//if ( template.index ) template = template.slice(0);
@@ -134,12 +152,23 @@ function generateViewArrayFromTemplate( template, selectors ){
 		templatePositions;
 		
 	for( var selector in selectors ) {
-		var data = selectors[selector];
-		if ( data.partial ) continue; // TODO: partials
+		var data = selectors[selector],
+			value = data;
+			
+		if ( data.partial ) {
+			var partials = [],
+				len = data.data && data.data.length || 1; // at least 1, to make the data array optional
+			
+			for ( var i = 0; i < len; i++ ){
+				partials.push( injectDataIntoTemplate( _preparedTemplates[partialPath( data.partial, options )], data.data[i] ).join("") );
+			}
+			
+			value = partials.join("");
+		}
 		
 		if ( templatePositions = template.index[selector] ){
 			templatePositions.forEach(function(i){
-				out[i] = data;
+				out[i] = value;
 			});
 		}
 	}
@@ -150,57 +179,68 @@ function generateViewArrayFromTemplate( template, selectors ){
 	return out;
 }
 
+// Helpers to generate consistent paths from given config options
+function layoutPath(options){ return options.settings.views+"/"+options.layout+'.'+options.settings['view engine']; }
+function partialPath(name,options){ return options.settings.views+"/partials/"+name+'.'+options.settings['view engine']; }
 
-function layoutPath(options){
-	return options.settings.views+"/"+options.layout+'.'+options.settings['view engine'];
-}
 
 // Make sure we've loaded and prepared all of the templates for a given request
 function loadFiles( filename, options, selectors, callback ){
 	var files = [],
-		open = 0,
-		responded = 0;
+		counts = {};
+	counts.open = 0;
+	counts.closed = 0;
 	
-	// Check to see if we've loaded this view before
-	if ( !_preparedTemplates[filename] ) {
-		open++;
-		loadTemplate( filename, options, selectors, function(){
-			if ( ++responded === open ) callback();
-		})
-	}
+	// Look for the main view
+	counts.open++;
+	loadTemplate( filename, options, selectors, function(){
+		if ( ++counts.closed == counts.open && counts.finished ) callback();
+	});
 	
 	// Look for the layout, if there is one
-	if ( options.layout && !_preparedTemplates[layoutPath(options)] ) {
-		open++;
+	if ( options.layout ){
+		counts.open++;
 		loadTemplate( layoutPath(options), options, selectors, function(){
-			if ( ++responded === open ) callback();
-		})
-	}
-	
-	/* Now look up all the partials used
-	for ( var selector in options.selectors ){
-		var data = options.selectors[selector];
-		if ( data.partial ){
-			files.push( options.settings.views + '/partials/' + selectors[key].partial + '.'+options.settings['view engine'] );
-		}
-	}
-	*/
-	
-	/*while ( i-- > 0 ) {
-		loadTemplate( files[i],	 function( err, str ){
-			
-			// generate the template and cache it
-			_preparedTemplates[filename] = generateIndexedArrayOfTemplateSlices( str, options.selectors );
-		
-			if ( ++responded == files.length ) callback()
+			if ( ++counts.closed == counts.open && counts.finished ) callback();
 		});
-	}*/
+	}
+	
+	// Load in any partial templates needed
+	loadPartialTemplates( selectors, options, counts, callback );
 }
 
+// Currently doesn't support nested partials
+function loadPartialTemplates( selectors, options, counts, callback ){
+	var i = 0;
+	for ( var selector in options.selectors ){
+		i++;
+		var conf = options.selectors[selector];
+		if ( conf.partial ){
+			counts.open++;
+			loadTemplate( partialPath(conf.partial,options), options, getPartialSelectors(conf.data), function(){
+				if ( ++counts.closed === counts.open ) callback();
+			});
+		}
+	}
+	counts.finished = true;
+	if ( i == 0 && counts.closed == counts.open ) callback();
+}
+
+function getPartialSelectors( dataArr ){
+	var selectors = {};
+	dataArr.forEach(function(item){
+		for ( var key in item ) selectors[key] = true;
+	});
+	return selectors;
+}
+	
 function loadTemplate( filename, options, selectors, callback ){
+	if ( _preparedTemplates[filename] ) {
+		return callback();
+	}
 	loadFile( filename, options, function( err, str ){
 		if ( err ) throw err;
-		_preparedTemplates[filename] = generateIndexedArrayOfTemplateSlices( str, selectors );
+		_preparedTemplates[filename] = generateTemplateFromHtml( str, selectors );
 		callback();
 	});
 }
@@ -219,12 +259,10 @@ function loadFile( filename, options, callback ){
 function insertTokensIntoHTML( html, token, selectors ){
 	
 	var $ = cheerio.load(html);
-		
-	for(var selector in selectors) {
+	
+	for( var selector in selectors ) {
 		var data = selectors[selector];
-		if( data && !data.partial ){ // not sure what to do about nested templates yet
-			if( typeof data === 'function') break;
-				
+		if ( data ){ // not sure what to do about nested templates yet
 			var $domNode = $(selector);
 			if( $domNode && $domNode.length) {
 				$domNode = updateNode( $, $domNode, selector, data, token);
@@ -240,7 +278,7 @@ function insertTokensIntoHTML( html, token, selectors ){
 // Stateless synchronous method for generating an array of template slices
 // Used by the two main API calls, doRender() and __express()
 //
-function generateIndexedArrayOfTemplateSlices( html, selectors ){
+function generateTemplateFromHtml( html, selectors ){
 	
 	// This token split process is the easiest way I could think of to break down "<i><b></b></i>" into ["<i><b>","","</b></i>"]
 	// the process goes:
@@ -270,7 +308,7 @@ function generateIndexedArrayOfTemplateSlices( html, selectors ){
 			}
 		}
 	});
-
+	
 	return slices;
 }
 
@@ -278,7 +316,7 @@ function generateIndexedArrayOfTemplateSlices( html, selectors ){
 // Uncached templating API for testing and utility
 //
 exports.doRender = function( str, selectors ){
-	var indexedArray = generateIndexedArrayOfTemplateSlices( str, selectors );
-	return generateCompleteHtml( indexedArray, undefined, undefined, selectors );
+	var template = generateTemplateFromHtml( str, selectors );
+	return generateHtmlFromTemplate( template, undefined, undefined, selectors );
 };
 

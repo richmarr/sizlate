@@ -1,6 +1,7 @@
 var sizlate = require('../sizlate.js'),
 	async = require("async");
 
+
 describe('When given a pre-compiled template', function() {
 	it("it should render very quickly", function(done) {
 		
@@ -10,6 +11,9 @@ describe('When given a pre-compiled template', function() {
 					'view engine':"html"
 				}
 			};
+			
+		sizlate.reset();
+
 		
 		// Run once first to make sure we have a pre-compiled template
 		// This also takes out the randomness of file i/o so that the 
@@ -24,7 +28,7 @@ describe('When given a pre-compiled template', function() {
 			}, function(cb){
 				sizlate.__express('spec/fixtures/view-a.html', config, cb );
 			}, function(){
-				expect(new Date().getTime() - startTime).toBeLessThan(20);
+				expect(new Date().getTime() - startTime).toBeLessThan(50);
 				done();
 			});	
 		});
