@@ -1,26 +1,34 @@
 var sizlate = require('../sizlate.js'),
 	async = require("async");
 
-describe('When given a file', function() {
-	it("it should render quickly", function(done) {
+describe('When given a pre-compiled template', function() {
+	it("it should render very quickly", function(done) {
 		
-		var i = 0,
-			startTime = new Date().getTime(),
-			config = {
+		var config = {
 				settings : {
 					views : "spec/fixtures",
 					'view engine':"html"
 				}
 			};
 		
-		async.whilst( function(){ 
-			return i++ < 100;
-		}, function(cb){
-			sizlate.__express('spec/fixtures/view-a.html', config, cb );
-		}, function(){
-			expect(new Date().getTime() - startTime).toBeLessThan(100);
-			done();
+		// Run once first to make sure we have a pre-compiled template
+		// This also takes out the randomness of file i/o so that the 
+		// tests are more predictable
+		sizlate.__express('spec/fixtures/view-a.html', config, function(){
+		
+			var i = 0,
+				startTime = new Date().getTime();
+			// Then time subsequent renderings
+			async.whilst( function(){ 
+				return i++ < 2000;
+			}, function(cb){
+				sizlate.__express('spec/fixtures/view-a.html', config, cb );
+			}, function(){
+				expect(new Date().getTime() - startTime).toBeLessThan(20);
+				done();
+			});	
 		});
+		
 	});
 });
 
