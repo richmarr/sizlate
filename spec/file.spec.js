@@ -1,8 +1,11 @@
 var sizlate = require('../sizlate.js'),
 	cheerio = require("cheerio");
-/*
+
 describe('When given a file', function() {
 	it("it should render properly", function(done) {
+		
+		sizlate.reset(); // hack until we can namespace this better
+		
 		sizlate.__express('spec/fixtures/view-a.html', {
 			settings : {
 				views : "spec/fixtures",
@@ -23,6 +26,9 @@ describe('When given a file', function() {
 
 describe('When given a file and a layout', function() {
 	it("it should render properly", function(done) {
+		
+		sizlate.reset(); // hack until we can namespace this better
+		
 		sizlate.__express('spec/fixtures/view-a.html', {
 			settings : {
 				views : "spec/fixtures",
@@ -50,13 +56,11 @@ describe('When given a file and a layout', function() {
 	});
 });
 
-*/
-
 
 describe('When given a file with partials', function() {
 	it("it should pull them in properly", function(done) {
 		
-		sizlate.reset();
+		sizlate.reset(); // hack until we can namespace this better
 
 		sizlate.__express('spec/fixtures/view-a.html', {
 			settings : {
@@ -94,9 +98,11 @@ describe('When given a file with partials', function() {
 	});
 });
 
-/*
 describe('When given a file with layout and partials', function() {
 	it("it should pull them together properly", function(done) {
+		
+		sizlate.reset(); // hack until we can namespace this better
+		
 		sizlate.__express('spec/fixtures/view-a.html', {
 			settings : {
 				views : "spec/fixtures",
@@ -129,4 +135,4 @@ describe('When given a file with layout and partials', function() {
 			done();
 		});
 	});
-});*/
+});
